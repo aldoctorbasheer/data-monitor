@@ -1,0 +1,64 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Flutter SDK
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+
+      - name: Prepare Project & Build APK
+        run: |
+          mkdir -p /tmp/backup_src
+          # البحث التلقائي عن الملفات سواء تم رفعها في المجلد الرئيسي مباشرة من الهاتف أو داخل مجلدات فرعية
+          find . -maxdepth 3 -name "pubspec.yaml" -exec cp -f {} /tmp/backup_src/pubspec.yaml \; -quit
+          find . -maxdepth 4 -name "main.dart" -exec cp -f {} /tmp/backup_src/main.dart \; -quit
+          find . -maxdepth 6 -name "AndroidManifest.xml" -exec cp -f {} /tmp/backup_src/AndroidManifest.xml \; -quit
+          find . -maxdepth 8 -name "MainActivity.kt" -exec cp -f {} /tmp/backup_src/MainActivity.kt \; -quit
+
+          mkdir -p /tmp/flutter_build
+          cd /tmp/flutter_build
+          flutter create --org com.example --project-name data_usage_monitor .
+
+          cp -f /tmp/backup_src/pubspec.yaml pubspec.yaml
+          cp -f /tmp/backup_src/main.dart lib/main.dart
+          cp -f /tmp/backup_src/AndroidManifest.xml android/app/src/main/AndroidManifest.xml
+          mkdir -p android/app/src/main/kotlin/com/example/data_usage_monitor
+          cp -f /tmp/backup_src/MainActivity.kt android/app/src/main/kotlin/com/example/data_usage_monitor/MainActivity.kt
+
+          flutter pub get
+          flutter build apk --release
+          cp build/app/outputs/flutter-apk/app-release.apk "$GITHUB_WORKSPACE/DataUsageMonitor.apk"
+
+      - name: Upload APK to Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: DataUsageMonitor-APK
+          path: DataUsageMonitor.apk
+
+      - name: Publish Direct APK to Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v2.0.${{ github.run_number }}
+          name: "تطبيق مراقب وقاطع البيانات (جاهز للتثبيت APK)"
+          body: "اضغط على ملف **DataUsageMonitor.apk** بالأسفل لتحميل التطبيق وتثبيته مباشرة على هاتفك الأندرويد."
+          files: DataUsageMonitor.apk
